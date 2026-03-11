@@ -1,0 +1,156 @@
+import { useState } from 'react';
+import axios from 'axios';
+import '../styles/LoginPage.css';
+
+function LoginPage() {
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    if (!email || !password) {
+      setMessage('Please enter your email and password');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await axios.post('http://localhost:8000/api/auth/login', {
+        email,
+        password
+      });
+
+      if (response.data.success) {
+        setMessage('✅ successful login!');
+        localStorage.setItem('token', response.data.token);
+        localStorage.setItem('user', JSON.stringify(response.data.user));
+        // You can navigate to the dashboard here
+        setTimeout(() => {
+          window.location.href = '/dashboard';
+        }, 1000);
+      } else {
+        setMessage('❌ ' + (response.data.error || 'failed login'));
+      }
+    } catch (error) {
+      setMessage('❌ error: ' + (error.response?.data?.error || error.message));
+    }
+    setLoading(false);
+  };
+
+  const handleRegister = async () => {
+    if (!email || !username || !password) {
+      setMessage('Please fill in all fields');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await axios.post('http://localhost:8000/api/auth/register', {
+        email,
+        username,
+        password
+      });
+
+      if (response.data.message) {
+        setMessage('✅ Registration successful! Please log in');
+        setIsLogin(true);
+        setPassword('');
+      } else {
+        setMessage('❌ ' + (response.data.error || 'Registration failed'));
+      }
+    } catch (error) {
+      setMessage('❌ error: ' + (error.response?.data?.error || error.message));
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="login-container">
+      <div className="login-box">
+        <h1>Oral Exam Platform</h1>
+
+        {isLogin ? (
+          <>
+            <h2>login</h2>
+            <input
+              type="email"
+              placeholder="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={loading}
+            />
+            <input
+              type="password"
+              placeholder="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={loading}
+            />
+            <button onClick={handleLogin} disabled={loading}>
+              {loading ? 'loading' : 'login'}
+            </button>
+            <p className="toggle-text">
+              no account？
+              <a href="#" onClick={(e) => {
+                e.preventDefault();
+                setIsLogin(false);
+                setMessage('');
+              }}>
+                register
+              </a>
+            </p>
+          </>
+        ) : (
+          <>
+            <h2>register</h2>
+            <input
+              type="email"
+              placeholder="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={loading}
+            />
+            <input
+              type="text"
+              placeholder="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              disabled={loading}
+            />
+            <input
+              type="password"
+              placeholder="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={loading}
+            />
+            <button onClick={handleRegister} disabled={loading}>
+              {loading ? 'loading' : 'register'}
+            </button>
+            <p className="toggle-text">
+              have account？
+              <a href="#" onClick={(e) => {
+                e.preventDefault();
+                setIsLogin(true);
+                setMessage('');
+              }}>
+                login
+              </a>
+            </p>
+          </>
+        )}
+
+        {message && (
+          <p className={`message ${message.includes('✅') ? 'success' : 'error'}`}>
+            {message}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default LoginPage;
