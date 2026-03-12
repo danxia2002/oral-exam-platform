@@ -2,8 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from database import engine, SessionLocal
-from models import Base, User
+from models import Base, User, Exam
 import hashlib
+from datetime import datetime
+from typing import List, Optional
 
 # create database
 Base.metadata.create_all(bind=engine)
@@ -18,7 +20,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# identify requested data form
+# ===== Request Models =====
+
 class LoginRequest(BaseModel):
     email: str
     password: str
@@ -28,30 +31,34 @@ class RegisterRequest(BaseModel):
     username: str
     password: str
 
-# fx
+class CreateExamRequest(BaseModel):
+    name: str
+    description: str
+    topics: List[str]
+
+# ===== Helper Functions =====
+
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
-# API root
-@app.get("/")
-def read_root():
-    return {"message": "Oral Exam Platform API is running"}
+def get_user_id_from_token(token: str) -> Optional[int]:
+    """Extract user ID from token (simple implementation)"""
+    try:
+        return int(token.split('_')[1])
+    except:
+        return None
 
-@app.get("/health")
-def health_check():
-    return {"status": "healthy"}
+# ===== Auth Endpoints =====
 
 @app.post("/api/auth/register")
 def register(request: RegisterRequest):
     db = SessionLocal()
     
-    # check if the user exist
     existing_user = db.query(User).filter(User.email == request.email).first()
     if existing_user:
         db.close()
         return {"error": "User already exists"}
     
-    # create new user
     password_hash = hash_password(request.password)
     new_user = User(
         email=request.email,
@@ -75,14 +82,12 @@ def register(request: RegisterRequest):
 def login(request: LoginRequest):
     db = SessionLocal()
     
-    # find user
     user = db.query(User).filter(User.email == request.email).first()
     
     if not user:
         db.close()
         return {"error": "User not found", "success": False}
     
-    # verify password
     password_hash = hash_password(request.password)
     if password_hash != user.password_hash:
         db.close()
@@ -90,7 +95,6 @@ def login(request: LoginRequest):
     
     db.close()
     
-    # login success
     return {
         "success": True,
         "token": f"token_{user.id}",
@@ -100,3 +104,107 @@ def login(request: LoginRequest):
             "username": user.username
         }
     }
+
+# ===== Exam Endpoints =====
+
+@app.post("/api/exams")
+def create_exam(request: CreateExamRequest, token: str):
+    """Create a new exam"""
+    user_id = get_user_id_from_token(token)
+    
+    if not user_id:
+        return {"error": "Invalid token", "success": False}
+    
+    db = SessionLocal()
+    
+    new_exam = Exam(
+        name=request.name,
+        description=request.description,
+        topics=request.topics,
+        teacher_id=user_id
+    )
+    
+    db.add(new_exam)
+    db.commit()
+    db.refresh(new_exam)
+    db.close()
+    
+    return {
+        "success": True,
+        "exam": {
+            "id": new_exam.id,
+            "name": new_exam.name,
+            "description": new_exam.description,
+            "topics": new_exam.topics,
+            "created_at": new_exam.created_at.isoformat()
+        }
+    }
+
+@app.get("/api/exams")
+def get_exams(token: str):
+    """Get all exams for the logged-in teacher"""
+    user_id = get_user_id_from_token(token)
+    
+    if not user_id:
+        return {"error": "Invalid token", "success": False}
+    
+    db = SessionLocal()
+    
+    exams = db.query(Exam).filter(Exam.teacher_id == user_id).all()
+    
+    db.close()
+    
+    return {
+        "success": True,
+        "exams": [
+            {
+                "id": exam.id,
+                "name": exam.name,
+                "description": exam.description,
+                "topics": exam.topics,
+                "created_at": exam.created_at.isoformat()
+            }
+            for exam in exams
+        ]
+    }
+
+@app.get("/api/exams/{exam_id}")
+def get_exam(exam_id: int, token: str):
+    """Get a specific exam"""
+    user_id = get_user_id_from_token(token)
+    
+    if not user_id:
+        return {"error": "Invalid token", "success": False}
+    
+    db = SessionLocal()
+    
+    exam = db.query(Exam).filter(
+        Exam.id == exam_id,
+        Exam.teacher_id == user_id
+    ).first()
+    
+    db.close()
+    
+    if not exam:
+        return {"error": "Exam not found", "success": False}
+    
+    return {
+        "success": True,
+        "exam": {
+            "id": exam.id,
+            "name": exam.name,
+            "description": exam.description,
+            "topics": exam.topics,
+            "created_at": exam.created_at.isoformat()
+        }
+    }
+
+# ===== Health Check =====
+
+@app.get("/")
+def read_root():
+    return {"message": "Oral Exam Platform API is running"}
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}

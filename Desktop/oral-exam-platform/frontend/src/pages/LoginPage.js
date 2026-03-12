@@ -2,7 +2,7 @@ import { useState } from 'react';
 import axios from 'axios';
 import '../styles/LoginPage.css';
 
-function LoginPage() {
+function LoginPage({ onLoginSuccess }) {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
@@ -27,10 +27,11 @@ function LoginPage() {
         setMessage('✅ successful login!');
         localStorage.setItem('token', response.data.token);
         localStorage.setItem('user', JSON.stringify(response.data.user));
-        // You can navigate to the dashboard here
-        setTimeout(() => {
-          window.location.href = '/dashboard';
-        }, 1000);
+        
+        // Call parent component callback
+        if (onLoginSuccess) {
+          onLoginSuccess();
+        }
       } else {
         setMessage('❌ ' + (response.data.error || 'failed login'));
       }
@@ -93,7 +94,7 @@ function LoginPage() {
               {loading ? 'loading' : 'login'}
             </button>
             <p className="toggle-text">
-              no account？
+              no account?
               <a href="#" onClick={(e) => {
                 e.preventDefault();
                 setIsLogin(false);
@@ -131,7 +132,7 @@ function LoginPage() {
               {loading ? 'loading' : 'register'}
             </button>
             <p className="toggle-text">
-              have account？
+              have account?
               <a href="#" onClick={(e) => {
                 e.preventDefault();
                 setIsLogin(true);
