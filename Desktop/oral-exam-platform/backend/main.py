@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from database import engine, SessionLocal
-from models import Base, User, Exam
+from models import Base, User, Exam, StudentExam  # 添加 StudentExam！
 import hashlib
 from datetime import datetime
 from typing import List, Optional
@@ -30,6 +30,7 @@ class RegisterRequest(BaseModel):
     email: str
     username: str
     password: str
+    user_type: str = "student"
 
 class CreateExamRequest(BaseModel):
     name: str
@@ -63,7 +64,8 @@ def register(request: RegisterRequest):
     new_user = User(
         email=request.email,
         username=request.username,
-        password_hash=password_hash
+        password_hash=password_hash,
+        user_type=request.user_type
     )
     
     db.add(new_user)
@@ -75,6 +77,7 @@ def register(request: RegisterRequest):
         "id": new_user.id,
         "email": new_user.email,
         "username": new_user.username,
+        "user_type": new_user.user_type,
         "message": "User created successfully"
     }
 
@@ -101,11 +104,116 @@ def login(request: LoginRequest):
         "user": {
             "id": user.id,
             "email": user.email,
-            "username": user.username
+            "username": user.username,
+            "user_type": user.user_type
         }
     }
 
 # ===== Exam Endpoints =====
+
+# ===== Student Exam Endpoints =====
+
+@app.post("/api/exams/{exam_id}/start")
+def start_exam(exam_id: int, token: str):
+    """Student starts an exam"""
+    user_id = get_user_id_from_token(token)
+    
+    if not user_id:
+        return {"error": "Invalid token", "success": False}
+    
+    db = SessionLocal()
+    
+    # Check if exam exists
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    
+    if not exam:
+        db.close()
+        return {"error": "Exam not found", "success": False}
+    
+    # Create student exam record
+    student_exam = StudentExam(
+        student_id=user_id,
+        exam_id=exam_id,
+        status="in_progress"
+    )
+    
+    db.add(student_exam)
+    db.commit()
+    db.refresh(student_exam)
+    db.close()
+    
+    return {
+        "success": True,
+        "student_exam": {
+            "id": student_exam.id,
+            "exam_id": exam_id,
+            "status": "in_progress",
+            "started_at": student_exam.started_at.isoformat()
+        }
+    }
+
+@app.get("/api/exams/available")
+def get_available_exams(token: str):
+    """Get all exams available for students"""
+    user_id = get_user_id_from_token(token)
+    
+    if not user_id:
+        return {"error": "Invalid token", "success": False}
+    
+    db = SessionLocal()
+    
+    # Get all exams (all exams are available to all students)
+    exams = db.query(Exam).all()
+    
+    db.close()
+    
+    return {
+        "success": True,
+        "exams": [
+            {
+                "id": exam.id,
+                "name": exam.name,
+                "description": exam.description,
+                "topics": exam.topics,
+                "teacher_id": exam.teacher_id,
+                "created_at": exam.created_at.isoformat()
+            }
+            for exam in exams
+        ]
+    }
+
+@app.get("/api/my-exams")
+def get_my_exams(token: str):
+    """Get exams that student has taken"""
+    user_id = get_user_id_from_token(token)
+    
+    if not user_id:
+        return {"error": "Invalid token", "success": False}
+    
+    db = SessionLocal()
+    
+    student_exams = db.query(StudentExam).filter(
+        StudentExam.student_id == user_id
+    ).all()
+    
+    result = []
+    for se in student_exams:
+        exam = db.query(Exam).filter(Exam.id == se.exam_id).first()
+        result.append({
+            "id": se.id,
+            "exam_id": exam.id,
+            "exam_name": exam.name,
+            "status": se.status,
+            "started_at": se.started_at.isoformat(),
+            "completed_at": se.completed_at.isoformat() if se.completed_at else None
+        })
+    
+    db.close()
+    
+    return {
+        "success": True,
+        "student_exams": result
+    }
 
 @app.post("/api/exams")
 def create_exam(request: CreateExamRequest, token: str):

@@ -7,6 +7,7 @@ function LoginPage({ onLoginSuccess }) {
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [userType, setUserType] = useState('student');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -52,7 +53,8 @@ function LoginPage({ onLoginSuccess }) {
       const response = await axios.post('http://localhost:8000/api/auth/register', {
         email,
         username,
-        password
+        password,
+        user_type: userType
       });
 
       if (response.data.message) {
@@ -128,6 +130,23 @@ function LoginPage({ onLoginSuccess }) {
               onChange={(e) => setPassword(e.target.value)}
               disabled={loading}
             />
+            <select 
+              value={userType} 
+              onChange={(e) => setUserType(e.target.value)}
+              disabled={loading}
+              style={{
+                width: '100%',
+                padding: '12px',
+                marginBottom: '15px',
+                border: '1px solid #ddd',
+                borderRadius: '5px',
+                fontSize: '16px'
+              }}
+            >
+              <option value="student">Register as Student</option>
+              <option value="teacher">Register as Teacher</option>
+            </select>
+
             <button onClick={handleRegister} disabled={loading}>
               {loading ? 'loading' : 'register'}
             </button>
