@@ -1,3 +1,4 @@
+import ExamInProgress from './ExamInProgress';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import '../styles/StudentExams.css';
@@ -7,7 +8,8 @@ function StudentExams() {
   const [myExams, setMyExams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
-  const [activeTab, setActiveTab] = useState('available'); // "available" or "my-exams"
+  const [activeTab, setActiveTab] = useState('available');
+  const [inProgress, setInProgress] = useState(null);
   
   const token = localStorage.getItem('token');
   const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -19,24 +21,27 @@ function StudentExams() {
   const fetchExams = async () => {
     try {
       // Get available exams
-      const availableRes = await axios.get('http://localhost:8000/api/exams/available', {
-        params: { token }
-      });
-      
+      const availableRes = await axios.get(
+        'http://localhost:8000/api/exams/available',
+        { params: { token } }
+      );
+    
       if (availableRes.data.success) {
         setExams(availableRes.data.exams);
       }
 
       // Get my exams
-      const myRes = await axios.get('http://localhost:8000/api/my-exams', {
-        params: { token }
-      });
-      
+      const myRes = await axios.get(
+        'http://localhost:8000/api/my-exams',
+        { params: { token } }
+      );
+    
       if (myRes.data.success) {
         setMyExams(myRes.data.student_exams);
       }
     } catch (error) {
       setMessage('Error loading exams');
+      console.error(error);
     }
     setLoading(false);
   };
@@ -51,12 +56,17 @@ function StudentExams() {
 
       if (response.data.success) {
         setMessage('✅ Exam started!');
-        fetchExams(); // Refresh lists
-        setActiveTab('my-exams');
+        setInProgress(response.data.student_exam.id);
       }
     } catch (error) {
       setMessage('❌ Error starting exam');
     }
+  };
+
+  const handleExamComplete = () => {
+    setInProgress(null);
+    setMessage('✅ Exam completed successfully!');
+    fetchExams();
   };
 
   const handleLogout = () => {
@@ -67,6 +77,13 @@ function StudentExams() {
 
   if (loading) {
     return <div className="student-container"><p>Loading...</p></div>;
+  }
+
+  if (inProgress) {
+    return <ExamInProgress 
+      studentExamId={inProgress} 
+      onComplete={handleExamComplete} 
+    />;
   }
 
   return (
