@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import '../styles/ExamInProgress.css';
 
@@ -20,8 +20,51 @@ function ExamInProgress({ studentExamId, onComplete }) {
   const audioRefRef = useRef(null);
   const token = localStorage.getItem('token');
 
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef(null);
+
   useEffect(() => {
     initializeExam();
+  }, []);
+
+  // handle Speech Recognition result
+  useEffect(() => {
+    if (!recognitionRef.current) return;
+  
+    recognitionRef.current.onstart = () => {
+      setIsListening(true);
+    };
+  
+    recognitionRef.current.onresult = (event) => {
+      let interimTranscript = '';
+      let finalTranscript = '';
+    
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+      
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript + ' ';
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+    
+      if (interimTranscript) {
+      }
+    
+      if (finalTranscript) {
+        setUserAnswer(prev => prev + finalTranscript);
+      }
+    };
+  
+    recognitionRef.current.onerror = (event) => {
+      console.log('Speech recognition error:', event.error);
+      setMessage('❌ Speech recognition error: ' + event.error);
+    };
+  
+    recognitionRef.current.onend = () => {
+      setIsListening(false);
+    };
   }, []);
 
   useEffect(() => {
@@ -36,6 +79,19 @@ function ExamInProgress({ studentExamId, onComplete }) {
 
     return () => clearInterval(timer);
   }, [timeLeft]);
+
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+      
+      recognitionRef.current = recognition;
+    }
+  }, []);
 
   const initializeExam = async () => {
     try {
@@ -84,14 +140,51 @@ function ExamInProgress({ studentExamId, onComplete }) {
       };
       
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-        setMessage('✅ Recording saved. Click "Submit Answer" to proceed.');
+        setMessage('✅ Recording saved.');
       };
       
       mediaRecorderRef.current = mediaRecorder;
       mediaRecorder.start();
       setIsRecording(true);
-      setMessage('Recording... Click "Stop Recording" to submit your answer');
+      setHasRecording(true);
+
+      // 初始化并启动 Speech Recognition
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+      
+        recognition.onresult = (event) => {
+          let finalTranscript = '';
+        
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+          
+            if (event.results[i].isFinal) {
+              finalTranscript += transcript + ' ';
+            }
+          }
+        
+          if (finalTranscript) {
+            setUserAnswer(prev => prev + finalTranscript);
+            console.log('Transcribed:', finalTranscript);  // 调试用
+          }
+        };
+      
+        recognition.onerror = (event) => {
+          console.log('Speech error:', event.error);
+          setMessage('❌ Speech error: ' + event.error);
+        };
+      
+        recognitionRef.current = recognition;
+        recognition.start();
+        setIsListening(true);
+        setMessage('🎤 Recording... Say your answer');
+      }
+    
     } catch (error) {
       setMessage('Microphone access denied');
     }
@@ -109,6 +202,12 @@ function ExamInProgress({ studentExamId, onComplete }) {
       }
       
       setHasRecording(true);
+    }
+
+    // stop Speech Recognition
+    if (recognitionRef.current && isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
     }
   };
 
@@ -250,7 +349,7 @@ function ExamInProgress({ studentExamId, onComplete }) {
                 className="stop-btn"
                 onClick={stopRecording}
               >
-                ⏹️ Stop Recording
+                ⏹️ Stop Recording {isListening && '(Listening...)'}
               </button>
             )}
             
