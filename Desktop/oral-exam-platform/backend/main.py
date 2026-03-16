@@ -9,6 +9,8 @@ from models import Base, User, Exam, StudentExam
 import hashlib
 from datetime import datetime
 from typing import List, Optional
+import base64
+from io import BytesIO
 
 load_dotenv()
 
@@ -360,21 +362,34 @@ def start_conversation(student_exam_id: int, token: str = ""):
     first_question = questions[0]
     
     try:
-        audio = elevenlabs_client.generate(
+        audio_stream = elevenlabs_client.text_to_speech.convert(
             text=first_question,
-            voice="Bella",
-            model="eleven_monolingual_v1"
+            voice_id="EXAVITQu4vr4xnSDxMaL",
+            model_id="eleven_turbo_v2"
         )
+        
+        # 读取 generator
+        audio_bytes = b''.join(audio_stream)
+        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
         
         return {
             "success": True,
             "conversation_id": student_exam_id,
             "question": first_question,
+            "question_audio": f"data:audio/mpeg;base64,{audio_base64}",
             "question_number": 1,
             "total_questions": len(questions)
         }
     except Exception as e:
-        return {"error": f"Failed to generate audio: {str(e)}", "success": False}
+        print(f"Audio error: {str(e)}")
+        return {
+            "success": True,
+            "conversation_id": student_exam_id,
+            "question": first_question,
+            "question_audio": None,
+            "question_number": 1,
+            "total_questions": len(questions)
+        }
 
 @app.post("/api/conversations/message")
 def send_conversation_message(msg: ConversationMessage, token: str = ""):
@@ -398,21 +413,37 @@ def send_conversation_message(msg: ConversationMessage, token: str = ""):
     
     db.close()
     
-    next_question_idx = msg.current_question_number  # 使用前端传来的
+    next_question_idx = msg.current_question_number
     is_complete = next_question_idx >= len(questions)
     
-    if is_complete:
-        next_question = None
-    else:
-        next_question = questions[next_question_idx]
-    
-    return {
+    response_data = {
         "success": True,
         "student_answer": msg.message,
         "is_complete": is_complete,
-        "next_question": next_question,
+        "next_question": None,
+        "next_question_audio": None,
         "message": "Exam completed!" if is_complete else "Next question generated"
     }
+    
+    if not is_complete:
+        next_question = questions[next_question_idx]
+        response_data["next_question"] = next_question
+        
+        try:
+            audio_stream = elevenlabs_client.text_to_speech.convert(
+                text=next_question,
+                voice_id="EXAVITQu4vr4xnSDxMaL",
+                model_id="eleven_turbo_v2"
+            )
+            
+            audio_bytes = b''.join(audio_stream)
+            audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+            response_data["next_question_audio"] = f"data:audio/mpeg;base64,{audio_base64}"
+        except Exception as e:
+            print(f"Audio error: {str(e)}")
+            response_data["next_question_audio"] = None
+    
+    return response_data
 
 @app.post("/api/conversations/complete")
 def complete_exam(student_exam_id: int, token: str = ""):

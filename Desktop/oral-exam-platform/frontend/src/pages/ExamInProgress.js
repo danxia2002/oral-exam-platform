@@ -10,18 +10,20 @@ function ExamInProgress({ studentExamId, onComplete }) {
   const [isRecording, setIsRecording] = useState(false);
   const [isWaiting, setIsWaiting] = useState(false);
   const [message, setMessage] = useState('');
-  const [timeLeft, setTimeLeft] = useState(600); // 10 minutes in seconds
+  const [timeLeft, setTimeLeft] = useState(600);
+  const [hasRecording, setHasRecording] = useState(false);
+  const [questionAudio, setQuestionAudio] = useState(null);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+  const audioRefRef = useRef(null);
   const token = localStorage.getItem('token');
 
-  // Initialize exam
   useEffect(() => {
     initializeExam();
   }, []);
 
-  // Timer countdown
   useEffect(() => {
     if (timeLeft <= 0) {
       handleCompleteExam();
@@ -47,13 +49,28 @@ function ExamInProgress({ studentExamId, onComplete }) {
         setQuestion(response.data.question);
         setQuestionNumber(response.data.question_number);
         setTotalQuestions(response.data.total_questions);
+        
+        if (response.data.question_audio) {
+          setQuestionAudio(response.data.question_audio);
+          playAudio(response.data.question_audio);
+        }
       }
     } catch (error) {
       setMessage('Failed to start exam');
     }
   };
 
-  const [hasRecording, setHasRecording] = useState(false);
+  const playAudio = async (audioDataUrl) => {
+    if (!audioRefRef.current) return;
+
+    try {
+      audioRefRef.current.pause();
+      audioRefRef.current.src = audioDataUrl;
+      await audioRefRef.current.play();
+    } catch (err) {
+      console.warn("Audio playback prevented:", err);
+    }
+  };
 
   const startRecording = async () => {
     try {
@@ -68,7 +85,6 @@ function ExamInProgress({ studentExamId, onComplete }) {
       
       mediaRecorder.onstop = () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-        // In real implementation, send to speech-to-text API
         setMessage('✅ Recording saved. Click "Submit Answer" to proceed.');
       };
       
@@ -85,12 +101,13 @@ function ExamInProgress({ studentExamId, onComplete }) {
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
-
+      
       if (mediaRecorderRef.current.stream) {
         mediaRecorderRef.current.stream.getTracks().forEach(track => {
           track.stop();
         });
       }
+      
       setHasRecording(true);
     }
   };
@@ -101,7 +118,7 @@ function ExamInProgress({ studentExamId, onComplete }) {
 
     try {
       const answerToSubmit = userAnswer.trim() || "Student provided audio response";
-    
+      
       const response = await axios.post(
         'http://localhost:8000/api/conversations/message',
         {
@@ -122,6 +139,11 @@ function ExamInProgress({ studentExamId, onComplete }) {
           setUserAnswer('');
           setHasRecording(false);
           setMessage('Next question loaded. Take your time!');
+          
+          if (response.data.next_question_audio) {
+            setQuestionAudio(response.data.next_question_audio);
+            playAudio(response.data.next_question_audio);
+          }
         }
       }
     } catch (error) {
@@ -184,6 +206,25 @@ function ExamInProgress({ studentExamId, onComplete }) {
           <h2>Question {questionNumber}</h2>
           <p className="question-text">{question}</p>
           <p className="instruction">Please answer in your own words</p>
+          
+          {/* 隐藏的音频播放器 */}
+          <audio 
+            ref={audioRefRef}
+            style={{ display: 'none' }}
+            onPlay={() => setIsPlayingAudio(true)}
+            onEnded={() => setIsPlayingAudio(false)}
+          ></audio>
+
+          {/* 重新播放按钮 */}
+          {questionAudio && (
+            <button 
+              className="replay-btn"
+              onClick={() => playAudio(questionAudio)}
+              disabled={isPlayingAudio}
+            >
+              🔊 {isPlayingAudio ? 'Playing...' : 'Replay Question'}
+            </button>
+          )}
         </div>
 
         <div className="answer-section">
@@ -194,7 +235,7 @@ function ExamInProgress({ studentExamId, onComplete }) {
             onChange={(e) => setUserAnswer(e.target.value)}
             disabled={isWaiting}
           ></textarea>
-
+          
           <div className="button-group">
             {!isRecording ? (
               <button 

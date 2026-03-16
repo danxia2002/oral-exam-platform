@@ -196,3 +196,25 @@
   color: #0c5460;
   border: 1px solid #bee5eb;
 }
+
+.replay-btn {
+  padding: 10px 20px;
+  background: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-bottom: 15px;
+  transition: all 0.3s;
+}
+
+.replay-btn:hover:not(:disabled) {
+  background: #5a6268;
+  transform: translateY(-2px);
+}
+
+.replay-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
