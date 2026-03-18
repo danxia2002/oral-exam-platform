@@ -1,3 +1,4 @@
+from openai import OpenAI
 from elevenlabs.client import ElevenLabs
 import os
 from dotenv import load_dotenv
@@ -20,6 +21,10 @@ app = FastAPI()
 
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 elevenlabs_client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
+
+# Initialize openai
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 app.add_middleware(
     CORSMiddleware,
@@ -187,6 +192,7 @@ def get_exams(token: str = ""):
 
 @app.post("/api/exams/{exam_id}/start")
 def start_exam(exam_id: int, token: str = ""):
+    """Student starts an exam"""
     user_id = get_user_id_from_token(token)
     
     if not user_id:
@@ -194,16 +200,19 @@ def start_exam(exam_id: int, token: str = ""):
     
     db = SessionLocal()
     
+    # Check if exam exists
     exam = db.query(Exam).filter(Exam.id == exam_id).first()
     
     if not exam:
         db.close()
         return {"error": "Exam not found", "success": False}
     
+    # Create student exam record
     student_exam = StudentExam(
         student_id=user_id,
         exam_id=exam_id,
         status="in_progress"
+        # 不要设置 total_score 和 answers，让它们用默认值
     )
     
     db.add(student_exam)
@@ -337,6 +346,47 @@ EXAM_QUESTIONS = {
     ]
 }
 
+def evaluate_answer(question: str, student_answer: str) -> dict:
+    """Evaluate student's answer using OpenAI GPT"""
+    try:
+        prompt = f"""..."""  # 同样的 prompt
+        
+        message = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            max_tokens=1024,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+        
+        response_text = message.choices[0].message.content
+        
+        # 解析 JSON...
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0]
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0]
+        
+        import json
+        evaluation = json.loads(response_text.strip())
+        
+        return {
+            "success": True,
+            "score": evaluation.get("score", 0),
+            "strengths": evaluation.get("strengths", ""),
+            "improvements": evaluation.get("improvements", ""),
+            "feedback": evaluation.get("feedback", "")
+        }
+    
+    except Exception as e:
+        print(f"Evaluation error: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "score": 0,
+            "feedback": "Evaluation failed"
+        }
+
 @app.post("/api/conversations/start")
 def start_conversation(student_exam_id: int, token: str = ""):
     user_id = get_user_id_from_token(token)
@@ -413,17 +463,31 @@ def send_conversation_message(msg: ConversationMessage, token: str = ""):
     
     db.close()
     
-    next_question_idx = msg.current_question_number
-    is_complete = next_question_idx >= len(questions)
+    # 获取当前问题
+    current_question_idx = msg.current_question_number - 1
+    current_question = questions[current_question_idx] if current_question_idx < len(questions) else None
     
     response_data = {
         "success": True,
         "student_answer": msg.message,
-        "is_complete": is_complete,
+        "is_complete": False,
         "next_question": None,
         "next_question_audio": None,
-        "message": "Exam completed!" if is_complete else "Next question generated"
+        "score": 0,
+        "feedback": "",
+        "message": "Next question generated"
     }
+    
+    # 评估当前问题的答案
+    if current_question:
+        evaluation = evaluate_answer(current_question, msg.message)
+        response_data["score"] = evaluation.get("score", 0)
+        response_data["feedback"] = evaluation.get("feedback", "")
+    
+    # 检查是否完成
+    next_question_idx = msg.current_question_number
+    is_complete = next_question_idx >= len(questions)
+    response_data["is_complete"] = is_complete
     
     if not is_complete:
         next_question = questions[next_question_idx]
@@ -442,6 +506,8 @@ def send_conversation_message(msg: ConversationMessage, token: str = ""):
         except Exception as e:
             print(f"Audio error: {str(e)}")
             response_data["next_question_audio"] = None
+    else:
+        response_data["message"] = "Exam completed!"
     
     return response_data
 

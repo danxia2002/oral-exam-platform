@@ -153,8 +153,13 @@ function StudentExams() {
                     <div className="exam-info">
                       <h3>{se.exam_name}</h3>
                       <p className="status">
-                        Status: <span className={se.status}>{se.status}</span>
+                        Status: <span className={`status-${se.status}`}>{se.status}</span>
                       </p>
+                      {se.status === 'completed' && se.total_score !== undefined && (
+                        <p className="score">
+                          <strong>Score: {se.total_score}/500</strong>
+                        </p>
+                      )}
                       <p className="date">
                         Started: {new Date(se.started_at).toLocaleString()}
                       </p>
@@ -162,6 +167,17 @@ function StudentExams() {
                         <p className="date">
                           Completed: {new Date(se.completed_at).toLocaleString()}
                         </p>
+                      )}
+                      {se.status === 'completed' && (
+                        <button 
+                          className="view-details-btn"
+                          onClick={() => {
+                            // click to see detailed information
+                            console.log('View details for exam:', se.id);
+                          }}
+                        >
+                          View Details
+                        </button>
                       )}
                     </div>
                   </div>

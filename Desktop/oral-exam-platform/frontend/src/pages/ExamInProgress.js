@@ -23,6 +23,9 @@ function ExamInProgress({ studentExamId, onComplete }) {
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
 
+  const [lastScore, setLastScore] = useState(null);
+  const [lastFeedback, setLastFeedback] = useState('');
+
   useEffect(() => {
     initializeExam();
   }, []);
@@ -148,7 +151,7 @@ function ExamInProgress({ studentExamId, onComplete }) {
       setIsRecording(true);
       setHasRecording(true);
 
-      // 初始化并启动 Speech Recognition
+      // initialize and start Speech Recognition
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     
       if (SpeechRecognition) {
@@ -217,7 +220,7 @@ function ExamInProgress({ studentExamId, onComplete }) {
 
     try {
       const answerToSubmit = userAnswer.trim() || "Student provided audio response";
-      
+    
       const response = await axios.post(
         'http://localhost:8000/api/conversations/message',
         {
@@ -229,20 +232,31 @@ function ExamInProgress({ studentExamId, onComplete }) {
       );
 
       if (response.data.success) {
+        // show score and feedback
+        setLastScore(response.data.score);
+        setLastFeedback(response.data.feedback);
+        setMessage(`✅ Score: ${response.data.score}/100`);
+      
         if (response.data.is_complete) {
           setMessage('✅ Exam completed!');
-          setTimeout(() => handleCompleteExam(), 2000);
+          setTimeout(() => handleCompleteExam(), 3000);
         } else {
-          setQuestion(response.data.next_question);
-          setQuestionNumber(questionNumber + 1);
-          setUserAnswer('');
-          setHasRecording(false);
-          setMessage('Next question loaded. Take your time!');
+          // let the user see the score
+          setTimeout(() => {
+            setQuestion(response.data.next_question);
+            setQuestionNumber(questionNumber + 1);
+            setUserAnswer('');
+            setHasRecording(false);
+            setLastScore(null);
+            setLastFeedback('');
+            setMessage('Next question loaded. Take your time!');
           
-          if (response.data.next_question_audio) {
-            setQuestionAudio(response.data.next_question_audio);
-            playAudio(response.data.next_question_audio);
-          }
+            if (response.data.next_question_audio) {
+              setQuestionAudio(response.data.next_question_audio);
+              const audio = new Audio(response.data.next_question_audio);
+              audio.play().catch(err => console.log('Audio play error:', err));
+            }
+          }, 2000);
         }
       }
     } catch (error) {
@@ -306,7 +320,20 @@ function ExamInProgress({ studentExamId, onComplete }) {
           <p className="question-text">{question}</p>
           <p className="instruction">Please answer in your own words</p>
           
-          {/* 隐藏的音频播放器 */}
+          {lastScore !== null && (
+            <div style={{ 
+              background: lastScore >= 70 ? '#d4edda' : '#fff3cd',
+              padding: '15px',
+              borderRadius: '8px',
+              marginBottom: '15px',
+              border: '1px solid #ccc'
+            }}>
+              <p><strong>Score: {lastScore}/100</strong></p>
+              <p style={{ margin: '10px 0 0 0', fontSize: '14px' }}>{lastFeedback}</p>
+            </div>
+          )}
+          
+          {/* hidden audio player */}
           <audio 
             ref={audioRefRef}
             style={{ display: 'none' }}
@@ -314,7 +341,7 @@ function ExamInProgress({ studentExamId, onComplete }) {
             onEnded={() => setIsPlayingAudio(false)}
           ></audio>
 
-          {/* 重新播放按钮 */}
+          {/* replay button */}
           {questionAudio && (
             <button 
               className="replay-btn"

@@ -37,6 +37,8 @@ class StudentExam(Base):
     status = Column(String, default="in_progress")  # "in_progress", "completed"
     started_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
+    total_score = Column(Integer, default=0)
+    answers = Column(String, nullable=True) 
     
     student = relationship("User", back_populates="student_exams")
     exam = relationship("Exam", back_populates="student_exams")
