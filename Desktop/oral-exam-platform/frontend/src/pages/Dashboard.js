@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import '../styles/Dashboard.css';
+import TeacherAnalytics from './TeacherAnalytics';
 
 function Dashboard() {
   const [exams, setExams] = useState([]);
@@ -19,7 +20,7 @@ function Dashboard() {
 
   useEffect(() => {
     fetchExams();
-  }, []);
+  }, [token]);
 
   const fetchExams = async () => {
     try {
@@ -72,6 +73,12 @@ function Dashboard() {
     window.location.href = '/';
   };
 
+  const [showAnalytics, setShowAnalytics] = useState(false);
+
+  if (showAnalytics) {
+    return <TeacherAnalytics onBack={() => setShowAnalytics(false)} />;
+  }
+
   if (loading) {
     return <div className="dashboard-container"><p>Loading...</p></div>;
   }
@@ -82,6 +89,12 @@ function Dashboard() {
         <h1>Oral Exam Platform</h1>
         <div className="user-info">
           <span>Welcome, {user.username}!</span>
+          <button 
+            className="analytics-btn"
+            onClick={() => setShowAnalytics(true)}  // 改成 state，不用 window.location
+          >
+            📊 View Analytics
+          </button>
           <button className="logout-btn" onClick={handleLogout}>Logout</button>
         </div>
       </div>

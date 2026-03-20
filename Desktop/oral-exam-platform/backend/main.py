@@ -349,19 +349,36 @@ EXAM_QUESTIONS = {
 def evaluate_answer(question: str, student_answer: str) -> dict:
     """Evaluate student's answer using OpenAI GPT"""
     try:
-        prompt = f"""..."""  # 同样的 prompt
+        prompt = f"""
+You are a professional education assessment expert. Please evaluate the student's answer.
+
+Question: {question}
+
+Student's Answer: {student_answer}
+
+Please return ONLY a JSON response in this exact format, no other text:
+{{
+  "score": <0-100>,
+  "strengths": "<strengths>",
+  "improvements": "<improvements>",
+  "feedback": "<feedback>"
+}}
+"""
         
         message = openai_client.chat.completions.create(
             model="gpt-4o-mini",
             max_tokens=1024,
             messages=[
                 {"role": "user", "content": prompt}
-            ]
+            ],
+            temperature=0.7
         )
         
-        response_text = message.choices[0].message.content
+        response_text = message.choices[0].message.content.strip()
         
-        # 解析 JSON...
+        print(f"OpenAI response: {response_text[:200]}")  # 调试用
+        
+        # 提取 JSON
         if "```json" in response_text:
             response_text = response_text.split("```json")[1].split("```")[0]
         elif "```" in response_text:
@@ -378,11 +395,18 @@ def evaluate_answer(question: str, student_answer: str) -> dict:
             "feedback": evaluation.get("feedback", "")
         }
     
+    except json.JSONDecodeError as e:
+        print(f"JSON decode error: {str(e)}")
+        print(f"Response was: {response_text}")
+        return {
+            "success": False,
+            "score": 0,
+            "feedback": "Evaluation failed"
+        }
     except Exception as e:
         print(f"Evaluation error: {str(e)}")
         return {
             "success": False,
-            "error": str(e),
             "score": 0,
             "feedback": "Evaluation failed"
         }
@@ -461,8 +485,6 @@ def send_conversation_message(msg: ConversationMessage, token: str = ""):
     exam = db.query(Exam).filter(Exam.id == student_exam.exam_id).first()
     questions = EXAM_QUESTIONS.get(exam.name, EXAM_QUESTIONS["Python Basics"])
     
-    db.close()
-    
     # 获取当前问题
     current_question_idx = msg.current_question_number - 1
     current_question = questions[current_question_idx] if current_question_idx < len(questions) else None
@@ -483,6 +505,28 @@ def send_conversation_message(msg: ConversationMessage, token: str = ""):
         evaluation = evaluate_answer(current_question, msg.message)
         response_data["score"] = evaluation.get("score", 0)
         response_data["feedback"] = evaluation.get("feedback", "")
+        
+        # 保存答案到 answers 字段（JSON 格式）
+        import json
+        try:
+            answers = json.loads(student_exam.answers or "[]")
+        except:
+            answers = []
+        
+        existing = [a for a in answers if a["question_number"] == msg.current_question_number]
+
+        if not existing:
+          answers.append({
+              "question_number": msg.current_question_number,
+              "question": current_question,
+              "answer": msg.message,
+              "score": evaluation.get("score", 0),
+              "feedback": evaluation.get("feedback", ""),
+              "strengths": evaluation.get("strengths", ""),
+              "improvements": evaluation.get("improvements", "")
+          })
+        
+        student_exam.answers = json.dumps(answers)
     
     # 检查是否完成
     next_question_idx = msg.current_question_number
@@ -508,6 +552,15 @@ def send_conversation_message(msg: ConversationMessage, token: str = ""):
             response_data["next_question_audio"] = None
     else:
         response_data["message"] = "Exam completed!"
+        
+        # 计算总分
+        import json
+        answers = json.loads(student_exam.answers or "[]")
+        total_score = sum(ans.get("score", 0) for ans in answers)
+        student_exam.total_score = total_score
+    
+    db.commit()
+    db.close()
     
     return response_data
 
@@ -538,6 +591,112 @@ def complete_exam(student_exam_id: int, token: str = ""):
         "success": True,
         "message": "Exam completed successfully",
         "student_exam_id": student_exam_id
+    }
+
+@app.get("/api/student-exams/{student_exam_id}/details")
+def get_exam_details(student_exam_id: int, token: str = ""):
+    user_id = get_user_id_from_token(token)
+    
+    if not user_id:
+        return {"error": "Invalid token", "success": False}
+    
+    db = SessionLocal()
+    
+    student_exam = db.query(StudentExam).filter(
+        StudentExam.id == student_exam_id,
+        StudentExam.student_id == user_id
+    ).first()
+    
+    if not student_exam:
+        db.close()
+        return {"error": "Student exam not found", "success": False}
+    
+    exam = db.query(Exam).filter(Exam.id == student_exam.exam_id).first()
+    
+    db.close()
+    
+    import json
+    answers = json.loads(student_exam.answers or "[]")
+    
+    return {
+        "success": True,
+        "exam_id": student_exam.exam_id,
+        "exam_name": exam.name,
+        "total_score": student_exam.total_score,
+        "started_at": student_exam.started_at.isoformat(),
+        "completed_at": student_exam.completed_at.isoformat() if student_exam.completed_at else None,
+        "answers": answers
+    }
+
+@app.get("/api/teacher/analytics")
+def get_teacher_analytics(token: str = ""):
+    """Get analytics for teacher - all student exam results"""
+    user_id = get_user_id_from_token(token)
+    
+    if not user_id:
+        return {"error": "Invalid token", "success": False}
+    
+    db = SessionLocal()
+    
+    # 获取该教师创建的所有考试
+    exams = db.query(Exam).filter(Exam.teacher_id == user_id).all()
+    
+    analytics_data = []
+    
+    for exam in exams:
+        # 获取该考试的所有学生参与记录
+        student_exams = db.query(StudentExam).filter(
+            StudentExam.exam_id == exam.id
+        ).all()
+        
+        # 过滤已完成的考试
+        completed_exams = [se for se in student_exams if se.status == "completed"]
+        
+        if len(completed_exams) == 0:
+            continue  # 跳过没有完成记录的考试
+        
+        # 计算统计数据
+        scores = [se.total_score for se in completed_exams]
+        total_questions = 5  # 固定为 5 题
+        max_score = total_questions * 100  # 最高分 500
+        
+        exam_analytics = {
+            "exam_id": exam.id,
+            "exam_name": exam.name,
+            "description": exam.description,
+            "total_students": len(completed_exams),
+            "completed_students": len(completed_exams),
+            "completion_rate": f"{(len(completed_exams) / len(student_exams) * 100) if student_exams else 0:.1f}%",
+            "average_score": round(sum(scores) / len(scores), 1) if scores else 0,
+            "highest_score": max(scores) if scores else 0,
+            "lowest_score": min(scores) if scores else 0,
+            "max_score": max_score,
+            "students": []
+        }
+        
+        # 收集学生信息
+        for se in completed_exams:
+            student = db.query(User).filter(User.id == se.student_id).first()
+            if student:
+                exam_analytics["students"].append({
+                    "student_id": student.id,
+                    "student_name": student.username,
+                    "student_email": student.email,
+                    "score": se.total_score,
+                    "score_percentage": round((se.total_score / max_score) * 100, 1),
+                    "completed_at": se.completed_at.isoformat() if se.completed_at else None
+                })
+        
+        # 按分数降序排序
+        exam_analytics["students"].sort(key=lambda x: x["score"], reverse=True)
+        
+        analytics_data.append(exam_analytics)
+    
+    db.close()
+    
+    return {
+        "success": True,
+        "analytics": analytics_data
     }
 
 # ===== Health Check =====

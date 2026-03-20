@@ -1,4 +1,5 @@
 import ExamInProgress from './ExamInProgress';
+import ExamDetails from './ExamDetails'; 
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import '../styles/StudentExams.css';
@@ -10,13 +11,14 @@ function StudentExams() {
   const [message, setMessage] = useState('');
   const [activeTab, setActiveTab] = useState('available');
   const [inProgress, setInProgress] = useState(null);
+  const [viewingDetails, setViewingDetails] = useState(null);
   
   const token = localStorage.getItem('token');
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
   useEffect(() => {
     fetchExams();
-  }, []);
+  }, [token]);
 
   const fetchExams = async () => {
     try {
@@ -77,6 +79,13 @@ function StudentExams() {
 
   if (loading) {
     return <div className="student-container"><p>Loading...</p></div>;
+  }
+
+  if (viewingDetails) {
+    return <ExamDetails 
+      studentExamId={viewingDetails}
+      onBack={() => setViewingDetails(null)}
+    />;
   }
 
   if (inProgress) {
@@ -171,10 +180,7 @@ function StudentExams() {
                       {se.status === 'completed' && (
                         <button 
                           className="view-details-btn"
-                          onClick={() => {
-                            // click to see detailed information
-                            console.log('View details for exam:', se.id);
-                          }}
+                          onClick={() => setViewingDetails(se.id)}
                         >
                           View Details
                         </button>

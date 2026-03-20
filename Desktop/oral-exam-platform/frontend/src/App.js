@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
 import StudentExams from './pages/StudentExams';
+import TeacherAnalytics from './pages/TeacherAnalytics';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
