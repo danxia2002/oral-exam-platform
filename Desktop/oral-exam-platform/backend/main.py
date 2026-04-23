@@ -350,7 +350,18 @@ def evaluate_answer(question: str, student_answer: str) -> dict:
     """Evaluate student's answer using OpenAI GPT"""
     try:
         prompt = f"""
-You are a professional education assessment expert. Please evaluate the student's answer.
+You are a professional education assessment expert.
+
+Evaluate the student's answer based on the following criteria:
+
+Scoring Guidelines:
+- 90-100: Excellent answer, accurate, complete, clear explanation, demonstrates strong understanding
+- 80-89: Good answer, mostly correct with minor missing details
+- 70-79: Partially correct, some explanation but lacks depth
+- 60-69: Limited understanding, incomplete or unclear explanation
+- Below 60: Incorrect or insufficient answer
+
+Be fair and do NOT be overly strict. Reward correct understanding and clear explanation even if wording is not perfect.
 
 Question: {question}
 
